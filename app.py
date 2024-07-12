@@ -17,15 +17,16 @@ password = os.getenv('DB_PASSWORD')
 driver = '{ODBC Driver 17 for SQL Server}'
 
 # 接続文字列の作成
-connection_string = f'DRIVER={driver};SERVER={server};DATABASE={database};UID={username};PWD={password}'
+connection_string = f'DRIVER={driver};SERVER={server};DATABASE={database};UID={username};PWD=****;Connection Timeout=30'  # パスワードをマスク
 
 @app.route('/get_email', methods=['GET'])
 def get_email():
     conn = None
     result = []
     try:
-        # データベースへの接続
-        conn = pyodbc.connect(connection_string)
+        # 実際の接続文字列を使用して接続
+        real_connection_string = connection_string.replace("PWD=****", f"PWD={password}")
+        conn = pyodbc.connect(real_connection_string)
         cursor = conn.cursor()
 
         # サンプルクエリの実行
@@ -35,7 +36,7 @@ def get_email():
             result.append(row.Email)
             row = cursor.fetchone()
     except pyodbc.Error as ex:
-        return jsonify({"error": str(ex)}), 500
+        return jsonify({"error": str(ex), "connection_string": connection_string}), 500
     finally:
         # 接続を閉じる
         if conn:
