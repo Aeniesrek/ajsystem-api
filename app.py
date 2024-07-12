@@ -2,7 +2,7 @@ from flask import Flask, jsonify
 import os
 import pyodbc
 from dotenv import load_dotenv
-from urllib.parse import quote as url_quote
+from urllib.parse import quote as url_quote  # 修正
 
 app = Flask(__name__)
 
