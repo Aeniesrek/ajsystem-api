@@ -3,6 +3,7 @@ import os
 import pyodbc
 from dotenv import load_dotenv
 from urllib.parse import quote as url_quote  # 修正
+import hashlib
 
 app = Flask(__name__)
 
@@ -33,7 +34,8 @@ def get_email():
         cursor.execute("SELECT Email FROM [dbo].[AspNetUsers] WHERE LastName = N'森口' and FirstName = N'裕之'")
         row = cursor.fetchone()
         while row:
-            result.append(row.Email)
+            hashed_email = hashlib.sha256(row.Email.encode()).hexdigest()
+            result.append(hashed_email)
             row = cursor.fetchone()
     except pyodbc.Error as ex:
         return jsonify({"error": str(ex), "connection_string": connection_string}), 500
