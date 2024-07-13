@@ -5,6 +5,7 @@ import pyodbc
 from dotenv import load_dotenv
 from flask_httpauth import HTTPTokenAuth
 import urllib.parse
+from decimal import Decimal
 
 app = Flask(__name__)
 auth = HTTPTokenAuth(scheme='Bearer')
@@ -64,7 +65,8 @@ WHERE (E.LastName + E.FirstName) = ?
         cursor.execute(query, (full_name,))
         row = cursor.fetchone()
         if row:
-            result.append(row.TotalOvertimeHours)
+            # Decimalをfloatに変換
+            result.append(float(row.TotalOvertimeHours) if row.TotalOvertimeHours is not None else None)
             result.append(row.DateCount)
         else:
             result.append(None)
