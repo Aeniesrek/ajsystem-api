@@ -1,11 +1,12 @@
-from flask import Flask, jsonify
+from flask import Flask, jsonify, request
 import os
 import pyodbc
 from dotenv import load_dotenv
-from urllib.parse import quote as url_quote  # 修正
-import hashlib
+from flask_httpauth import HTTPTokenAuth
+import urllib.parse
 
 app = Flask(__name__)
+auth = HTTPTokenAuth(scheme='Bearer')
 
 # .envファイルから環境変数を読み込み
 load_dotenv()
@@ -20,8 +21,29 @@ driver = '{ODBC Driver 17 for SQL Server}'
 # 接続文字列の作成
 connection_string = f'DRIVER={driver};SERVER={server};DATABASE={database};UID={username};PWD=****;Connection Timeout=30'  # パスワードをマスク
 
+# ダミーのトークンリスト（実際にはデータベースや他の方法で管理する）
+tokens = {
+    os.getenv('ACCESS_TOKEN'): "user1",
+}
+
+@auth.verify_token
+def verify_token(token):
+    if token in tokens:
+        return tokens[token]
+    return None
+
 @app.route('/get_email', methods=['GET'])
+@auth.login_required
 def get_email():
+    full_name = request.args.get('full_name')
+    if not full_name:
+        return jsonify({"error": "full_name parameter is required"}), 400
+
+    # URLデコード
+    full_name = urllib.parse.unquote(full_name)
+    # デバッグメッセージを追加
+    print(f"Received full_name: {full_name}")
+
     conn = None
     result = []
     try:
@@ -31,14 +53,25 @@ def get_email():
         cursor = conn.cursor()
 
         # サンプルクエリの実行
-        cursor.execute("SELECT Email FROM [dbo].[AspNetUsers] WHERE LastName = N'森口' and FirstName = N'裕之'")
+        query = """
+SELECT CAST(SUM(CAST(DATEDIFF(MINUTE, '00:00:00', A.Overtime) AS DECIMAL(10, 2)) / 60.0) AS DECIMAL(10, 2)) AS TotalOvertimeHours,
+       Count(*) As DateCount
+FROM [dbo].[Attendances] A
+INNER JOIN AspNetUsers E ON A.UserId = E.Id
+WHERE (E.LastName + E.FirstName) = ?
+  AND MONTH(A.[Date]) = MONTH(GETDATE())
+  AND YEAR(A.[Date]) = YEAR(GETDATE());
+        """
+        cursor.execute(query, (full_name,))
         row = cursor.fetchone()
-        while row:
-            hashed_email = hashlib.sha256(row.Email.encode()).hexdigest()
-            result.append(hashed_email)
-            row = cursor.fetchone()
+        if row:
+            result.append(row.TotalOvertimeHours)
+            result.append(row.DateCount)
+        else:
+            result.append(None)
+            result.append(0)
     except pyodbc.Error as ex:
-        return jsonify({"error": str(ex), "connection_string": connection_string}), 500
+        return jsonify({"error": str(ex), "query": query, "full_name": full_name, "connection_string": connection_string}), 500
     finally:
         # 接続を閉じる
         if conn:
