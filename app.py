@@ -1,9 +1,9 @@
+from urllib.parse import quote as url_quote
 from flask import Flask, jsonify, request
 import os
 import pyodbc
 from dotenv import load_dotenv
 from flask_httpauth import HTTPTokenAuth
-from urllib.parse import quote as url_quote
 import urllib.parse
 
 app = Flask(__name__)
@@ -20,7 +20,7 @@ password = os.getenv('DB_PASSWORD')
 driver = '{ODBC Driver 17 for SQL Server}'
 
 # 接続文字列の作成
-connection_string = f'DRIVER={driver};SERVER={server};DATABASE={database};UID={username};PWD=****;Connection Timeout=30'  # パスワードをマスク
+connection_string = f'DRIVER={driver};SERVER={server};DATABASE={database};UID={username};PWD={password};Connection Timeout=30'
 
 # ダミーのトークンリスト（実際にはデータベースや他の方法で管理する）
 tokens = {
@@ -43,14 +43,12 @@ def get_email():
     # URLデコード
     full_name = urllib.parse.unquote(full_name)
     # デバッグメッセージを追加
-    print(f"Received full_name: {full_name}")
+    app.logger.info(f"Received full_name: {full_name}")
 
     conn = None
     result = []
     try:
-        # 実際の接続文字列を使用して接続
-        real_connection_string = connection_string.replace("PWD=****", f"PWD={password}")
-        conn = pyodbc.connect(real_connection_string)
+        conn = pyodbc.connect(connection_string)
         cursor = conn.cursor()
 
         # サンプルクエリの実行
@@ -72,7 +70,11 @@ WHERE (E.LastName + E.FirstName) = ?
             result.append(None)
             result.append(0)
     except pyodbc.Error as ex:
+        app.logger.error(f"Database error: {str(ex)}")
         return jsonify({"error": str(ex), "query": query, "full_name": full_name, "connection_string": connection_string}), 500
+    except Exception as ex:
+        app.logger.error(f"Unexpected error: {str(ex)}")
+        return jsonify({"error": str(ex)}), 500
     finally:
         # 接続を閉じる
         if conn:
