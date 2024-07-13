@@ -3,6 +3,7 @@ import os
 import pyodbc
 from dotenv import load_dotenv
 from flask_httpauth import HTTPTokenAuth
+from urllib.parse import quote as url_quote
 import urllib.parse
 
 app = Flask(__name__)
