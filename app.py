@@ -54,20 +54,23 @@ def get_email():
 
         # サンプルクエリの実行
         query = """
-SELECT CAST(SUM(CAST(DATEDIFF(MINUTE, '00:00:00', A.Overtime) AS DECIMAL(10, 2)) / 60.0) AS DECIMAL(10, 2)) AS TotalOvertimeHours,
-       Count(*) As DateCount
+SELECT 
+	CAST(SUM(CAST(DATEDIFF(MINUTE, '00:00:00', A.Overtime) AS DECIMAL(10, 2)) / 60.0) AS DECIMAL(10, 2)) AS TotalOvertimeHours,
+	COUNT(*) AS DateCount,
+	E.Email
 FROM [dbo].[Attendances] A
 INNER JOIN AspNetUsers E ON A.UserId = E.Id
 WHERE (E.LastName + E.FirstName) = ?
   AND MONTH(A.[Date]) = MONTH(GETDATE())
-  AND YEAR(A.[Date]) = YEAR(GETDATE());
+  AND YEAR(A.[Date]) = YEAR(GETDATE())
+GROUP BY E.Email;
         """
         cursor.execute(query, (full_name,))
         row = cursor.fetchone()
         if row:
-            # Decimalをfloatに変換
-            result.append(float(row.TotalOvertimeHours) if row.TotalOvertimeHours is not None else None)
-            result.append(row.DateCount)
+            result.append({"Email": row.Email, 
+                           "TotalOvertimeHours": float(row.TotalOvertimeHours) if row.TotalOvertimeHours is not None else None, 
+                           "DateCount": row.DateCount})
         else:
             result.append(None)
             result.append(0)
