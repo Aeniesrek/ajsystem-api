@@ -1,10 +1,9 @@
-from urllib.parse import quote as url_quote
 from flask import Blueprint, Flask, jsonify, request
 import os
 import pyodbc
 from dotenv import load_dotenv
 from flask_httpauth import HTTPTokenAuth
-import urllib.parse
+from urllib.parse import unquote
 from decimal import Decimal
 
 app = Flask(__name__)
@@ -14,14 +13,14 @@ auth = HTTPTokenAuth(scheme='Bearer')
 load_dotenv()
 
 # 環境変数からデータベース接続情報を取得
-server = os.getenv('DB_SERVER')
-database = os.getenv('DB_NAME')
-username = os.getenv('DB_USER')
-password = os.getenv('DB_PASSWORD')
-driver = '{ODBC Driver 17 for SQL Server}'
-
-# 接続文字列の作成
-connection_string = f'DRIVER={driver};SERVER={server};DATABASE={database};UID={username};PWD={password};Connection Timeout=30'
+connection_string = (
+    f"DRIVER={{ODBC Driver 17 for SQL Server}};"
+    f"SERVER={os.getenv('DB_SERVER')};"
+    f"DATABASE={os.getenv('DB_NAME')};"
+    f"UID={os.getenv('DB_USER')};"
+    f"PWD={os.getenv('DB_PASSWORD')};"
+    f"Connection Timeout=30"
+)
 
 # ダミーのトークンリスト（実際にはデータベースや他の方法で管理する）
 tokens = {
@@ -30,11 +29,28 @@ tokens = {
 
 @auth.verify_token
 def verify_token(token):
-    if token in tokens:
-        return tokens[token]
-    return None
+    return tokens.get(token)
 
 email_bp = Blueprint('email_bp', __name__)
+
+def get_db_connection():
+    return pyodbc.connect(connection_string)
+
+def execute_query(cursor, full_name):
+    query = """
+    SELECT 
+        CAST(SUM(CAST(DATEDIFF(MINUTE, '00:00:00', A.Overtime) AS DECIMAL(10, 2)) / 60.0) AS DECIMAL(10, 2)) AS TotalOvertimeHours,
+        COUNT(*) AS DateCount,
+        E.Email
+    FROM [dbo].[Attendances] A
+    INNER JOIN AspNetUsers E ON A.UserId = E.Id
+    WHERE (E.LastName + E.FirstName) = ?
+      AND MONTH(A.[Date]) = MONTH(GETDATE())
+      AND YEAR(A.[Date]) = YEAR(GETDATE())
+    GROUP BY E.Email;
+    """
+    cursor.execute(query, (full_name,))
+    return cursor.fetchone()
 
 @email_bp.route('/get_email', methods=['GET'])
 @auth.login_required
@@ -43,53 +59,33 @@ def get_email():
     if not full_name:
         return jsonify({"error": "full_name parameter is required"}), 400
 
-    # URLデコード
-    full_name = urllib.parse.unquote(full_name)
-    # デバッグメッセージを追加
+    full_name = unquote(full_name)
     app.logger.info(f"Received full_name: {full_name}")
 
-    conn = None
-    result = []
-    query = None
     try:
-        conn = pyodbc.connect(connection_string)
+        conn = get_db_connection()
         cursor = conn.cursor()
+        row = execute_query(cursor, full_name)
 
-        # サンプルクエリの実行
-        query = """
-SELECT 
-    CAST(SUM(CAST(DATEDIFF(MINUTE, '00:00:00', A.Overtime) AS DECIMAL(10, 2)) / 60.0) AS DECIMAL(10, 2)) AS TotalOvertimeHours,
-    COUNT(*) AS DateCount,
-    E.Email
-FROM [dbo].[Attendances] A
-INNER JOIN AspNetUsers E ON A.UserId = E.Id
-WHERE (E.LastName + E.FirstName) = ?
-  AND MONTH(A.[Date]) = MONTH(GETDATE())
-  AND YEAR(A.[Date]) = YEAR(GETDATE())
-GROUP BY E.Email;
-        """
-        cursor.execute(query, (full_name,))
-        row = cursor.fetchone()
         if row:
-            result.append({"Email": row.Email, 
-                           "TotalOvertimeHours": float(row.TotalOvertimeHours) if row.TotalOvertimeHours is not None else None, 
-                           "DateCount": row.DateCount})
+            result = {
+                "Email": row.Email, 
+                "TotalOvertimeHours": float(row.TotalOvertimeHours) if row.TotalOvertimeHours is not None else None, 
+                "DateCount": row.DateCount
+            }
         else:
-            result.append(None)
-            result.append(0)
+            result = {"Email": None, "TotalOvertimeHours": None, "DateCount": 0}
+
     except pyodbc.Error as ex:
         app.logger.error(f"Database error: {str(ex)}")
-        error_response = {"error": str(ex), "full_name": full_name, "connection_string": connection_string}
-        if query:
-            error_response["query"] = query
-        return jsonify(error_response), 500
+        return jsonify({"error": "Database error occurred"}), 500
     except Exception as ex:
         app.logger.error(f"Unexpected error: {str(ex)}")
-        return jsonify({"error": str(ex)}), 500
+        return jsonify({"error": "Unexpected error occurred"}), 500
     finally:
-        # 接続を閉じる
         if conn:
             conn.close()
+    
     return jsonify(result)
 
 if __name__ == '__main__':
