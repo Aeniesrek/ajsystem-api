@@ -12,6 +12,10 @@ def get_email():
         return jsonify({"error": "full_name parameter is required"}), 400
 
     full_name = unquote(full_name)
+    # Inside the get_email function
+    return get_email_info(full_name)
+
+def get_email_info(full_name):
     try:
         row = execute_query(get_email_info_query(), (full_name,))
 
@@ -23,10 +27,11 @@ def get_email():
             }
         else:
             result = {"Email": None, "TotalOvertimeHours": None, "DateCount": 0}
-
-    except RuntimeError as ex:
+    except RuntimeError:
         return jsonify({"error": "Database error occurred"}), 500
-    except Exception as ex:
+    except Exception:
         return jsonify({"error": "Unexpected error occurred"}), 500
-    
+        
     return jsonify(result)
+    
+
