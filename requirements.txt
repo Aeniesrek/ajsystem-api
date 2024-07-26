@@ -3,3 +3,7 @@ werkzeug==2.0.1
 python-dotenv==1.0.0
 pyodbc
 flask_httpauth
+Flask-SQLAlchemy
+Flask-Migrate
+Flask-WTF
+requests
